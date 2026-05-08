@@ -1,346 +1,289 @@
-"""
-AEC 2025 Narrative — Streamlit App
-UTS MDSI Data Narrative Studio
-
-A data narrative on the 2025 Australian federal election,
-focused on the rise of independent candidates.
-
-Narrative arc: Sparkline (the gap between "what is" and "what could be")
-"""
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
+from pathlib import Path
+import json
 
-
-# ----------------------------------------------------------------------------
-# Page configuration
-# ----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="AEC 2025 — The Independents Are Coming",
+    page_title="AEC 2025 — Beyond the Headlines",
     page_icon="🗳️",
-    layout="wide",
+    layout="wide"
 )
 
+st.title("🗳️ Beyond the Headlines")
+st.markdown("##### A data narrative on the 2025 Australian federal election")
+st.caption("UTS 36104 · Data Visualisation and Narratives · Group project")
+st.divider()
 
-# ----------------------------------------------------------------------------
-# Party colour palette
-# Using consistent ABC-election-night-style party colours
-# ----------------------------------------------------------------------------
+possible_paths = [Path("data/aec_cleaned.csv"), Path("aec_cleaned.csv")]
+csv_path = next((p for p in possible_paths if p.exists()), None)
+
+if csv_path is None:
+    st.error("Could not find aec_cleaned.csv. Put it in the same folder as this file, or inside a data folder.")
+    st.stop()
+
+df = pd.read_csv(csv_path)
+
+df = df.dropna(subset=["PartyAb"]).copy()
+
+elected_map = {
+    "TRUE": True,
+    "FALSE": False,
+    "Y": True,
+    "N": False,
+    "1": True,
+    "0": False
+}
+df["ElectedBool"] = df["Elected"].astype(str).str.upper().map(elected_map).fillna(False)
+
+for col in ["TotalVotes", "Swing", "PrePollShare"]:
+    if col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+def party_group(party_name):
+    if pd.isna(party_name):
+        return "Other"
+
+    party_name = str(party_name).strip()
+    lower_name = party_name.lower()
+
+    if party_name in ["Australian Labor Party", "ALP"]:
+        return "Labor"
+    elif party_name in [
+        "Liberal Party",
+        "LNP",
+        "Liberal National Party of Queensland",
+        "National Party",
+        "The Nationals"
+    ]:
+        return "Coalition"
+    elif party_name == "The Greens" or "greens" in lower_name:
+        return "Greens"
+    elif "independent" in lower_name or "teal" in lower_name:
+        return "Independent"
+    else:
+        return "Other"
+
+df["PartyGroup"] = df["PartyNm_clean"].apply(party_group)
+
 PARTY_COLOURS = {
-    "Australian Labor Party": "#DE3533",   # Labor red
-    "Liberal Party":          "#1C4F9C",   # Liberal blue
-    "LNP":                    "#1C4F9C",   # same as Liberal
-    "National Party":         "#006644",   # National green
-    "The Greens":             "#10C25B",   # Greens green
-    "Independent":            "#7B3FA0",   # Purple — distinctive
-    "Centre Alliance":        "#FF8C00",
-    "Katter's Australian Party (KAP)": "#B8860B",
+    "Labor": "#DE3533",
+    "Coalition": "#1C4F9C",
+    "Greens": "#10C25B",
+    "Independent": "#7B3FA0",
+    "Other": "#999999",
 }
 
+PARTY_ORDER = ["Labor", "Coalition", "Greens", "Independent", "Other"]
 
-# ----------------------------------------------------------------------------
-# Data loading + prep
-# ----------------------------------------------------------------------------
-@st.cache_data
-def load_data():
-    """Load the cleaned AEC dataset and build a per-division summary."""
-    df = pd.read_csv("data/aec_cleaned.csv")
+winners = df[df["ElectedBool"] == True].copy()
 
-    # Drop informal vote rows (no party / candidate)
-    candidates = df.dropna(subset=["PartyAb"]).copy()
-
-    # One row per division: geography
-    div_geo = (
-        candidates[["DivisionNm", "StateAb", "Latitude", "Longitude"]]
-        .drop_duplicates("DivisionNm")
-    )
-
-    # Winner per division
-    winners = candidates[candidates["Elected"]].copy()
-    winners = winners[
-        ["DivisionNm", "PartyNm_clean", "CandidateName", "Swing", "TotalVotes"]
-    ].rename(
-        columns={
-            "PartyNm_clean": "WinnerParty",
-            "CandidateName": "Winner",
-            "Swing": "WinnerSwing",
-            "TotalVotes": "WinnerVotes",
-        }
-    )
-
-    # Best-performing independent per division (winner OR runner-up)
-    inds = candidates[candidates["PartyNm_clean"] == "Independent"].copy()
-    best_ind = (
-        inds.sort_values("TotalVotes", ascending=False)
-        .groupby("DivisionNm")
+if winners.empty:
+    winners = (
+        df.sort_values(["DivisionID", "TotalVotes"], ascending=[True, False])
+        .groupby("DivisionID", as_index=False)
         .first()
-        .reset_index()[["DivisionNm", "CandidateName", "Swing", "TotalVotes", "Elected"]]
-        .rename(
-            columns={
-                "CandidateName": "TopIndependent",
-                "Swing": "IndSwing",
-                "TotalVotes": "IndVotes",
-                "Elected": "IndWon",
-            }
+    )
+
+seat_counts = (
+    winners.groupby(["StateAb", "PartyGroup"])
+    .size()
+    .reset_index(name="Seats")
+)
+
+state_data = (
+    seat_counts.pivot(index="StateAb", columns="PartyGroup", values="Seats")
+    .fillna(0)
+    .reset_index()
+)
+
+for col in PARTY_ORDER:
+    if col not in state_data.columns:
+        state_data[col] = 0
+
+state_data["TotalSeats"] = state_data[PARTY_ORDER].sum(axis=1)
+state_data["DominantBloc"] = state_data[PARTY_ORDER].idxmax(axis=1)
+
+state_name_map = {
+    "NSW": "New South Wales",
+    "VIC": "Victoria",
+    "QLD": "Queensland",
+    "WA": "Western Australia",
+    "SA": "South Australia",
+    "TAS": "Tasmania",
+    "ACT": "Australian Capital Territory",
+    "NT": "Northern Territory"
+}
+
+state_data["StateName"] = state_data["StateAb"].map(state_name_map)
+state_data["StateLabel"] = state_data["StateAb"]
+
+state_coords = {
+    "NSW": {"lat": -32.5, "lon": 147.0},
+    "VIC": {"lat": -37.0, "lon": 144.5},
+    "QLD": {"lat": -22.5, "lon": 144.5},
+    "WA": {"lat": -25.5, "lon": 122.0},
+    "SA": {"lat": -30.0, "lon": 135.5},
+    "TAS": {"lat": -42.0, "lon": 146.5},
+    "ACT": {"lat": -35.5, "lon": 149.0},
+    "NT": {"lat": -19.0, "lon": 133.0}
+}
+
+state_data["lat"] = state_data["StateAb"].map(lambda x: state_coords[x]["lat"])
+state_data["lon"] = state_data["StateAb"].map(lambda x: state_coords[x]["lon"])
+
+state_data["BubbleSize"] = (state_data["TotalSeats"]) + 25
+
+state_data["Tooltip"] = state_data.apply(
+    lambda row: (
+        f"<b>{row['StateName']}</b><br>"
+        f"Dominant bloc: <b>{row['DominantBloc']}</b><br>"
+        f"Total seats: {int(row['TotalSeats'])}<br>"
+        f"Labor: {int(row['Labor'])}<br>"
+        f"Coalition: {int(row['Coalition'])}<br>"
+        f"Greens: {int(row['Greens'])}<br>"
+        f"Independent: {int(row['Independent'])}<br>"
+        f"Other: {int(row['Other'])}"
+    ),
+    axis=1
+)
+
+st.markdown("## 1. Australia’s current electoral map")
+st.markdown(
+    """
+    Insert Explanations Here
+    """
+)
+
+total_independent_seats = int((winners["PartyGroup"] == "Independent").sum())
+states_with_independent_winners = int(
+    winners.loc[winners["PartyGroup"] == "Independent", "StateAb"].nunique()
+)
+total_states = int(state_data["StateAb"].nunique())
+
+k1, k2, k3 = st.columns(3)
+k1.metric("Independent-held seats", total_independent_seats)
+k2.metric("States with independent wins", states_with_independent_winners)
+k3.metric("States in this overview", total_states)
+
+left, right = st.columns([1.25, 1])
+
+with left:
+    geojson_path = Path("data/australian-states.json")
+
+    with open(geojson_path, "r", encoding="utf-8") as f:
+        australia_geojson = json.load(f)
+
+    fig_map = go.Figure()
+
+    fig_map.add_trace(
+        go.Choropleth(
+            geojson=australia_geojson,
+            locations=state_data["StateName"],
+            z=[1] * len(state_data),
+            featureidkey="properties.STATE_NAME",
+            colorscale=[[0, "#f5f5f5"], [1, "#f5f5f5"]],
+            showscale=False,
+            marker_line_color="white",
+            marker_line_width=2,
+            hoverinfo="skip"
         )
     )
 
-    # Combine
-    merged = div_geo.merge(winners, on="DivisionNm", how="left")
-    merged = merged.merge(best_ind, on="DivisionNm", how="left")
-    merged["IndSwing"] = merged["IndSwing"].fillna(0)
-    merged["IndVotes"] = merged["IndVotes"].fillna(0).astype(int)
-    merged["TopIndependent"] = merged["TopIndependent"].fillna("No independent ran")
-    merged["IndWon"] = merged["IndWon"].fillna(False)
+    fig_map.add_trace(
+        go.Scattergeo(
+            lon=state_data["lon"],
+            lat=state_data["lat"],
+            mode="markers",
+            marker=dict(
+                size=state_data["BubbleSize"],
+                color=state_data["DominantBloc"].map(PARTY_COLOURS),
+                opacity=0.95,
+                line=dict(width=1.5, color="white")
+            ),
+            text=state_data["Tooltip"],
+            hovertemplate="%{text}<extra></extra>",
+            showlegend=False
+        )
+    )
 
-    return merged, candidates
+    fig_map.add_trace(
+        go.Scattergeo(
+            lon=state_data["lon"],
+            lat=state_data["lat"],
+            text=state_data["StateLabel"],
+            mode="text",
+            textfont=dict(
+                size=12,
+                color="white",
+                family="Arial Black"
+            ),
+            showlegend=False,
+            hoverinfo="skip"
+        )
+    )
 
+    fig_map.update_geos(
+        fitbounds="locations",
+        visible=False,
+        showcountries=False,
+        showcoastlines=True,
+        coastlinecolor="LightGray",
+        projection_type="equirectangular"
+    )
 
-# ----------------------------------------------------------------------------
-# Visual 1 — National overview map
-# ----------------------------------------------------------------------------
-def visual_1_overview(div_summary: pd.DataFrame):
-    """Map of all 150 divisions, coloured by winning party."""
-    fig = px.scatter_map(
-        div_summary,
-        lat="Latitude",
-        lon="Longitude",
-        color="WinnerParty",
+    fig_map.update_layout(
+        title="Which bloc dominates each state?",
+        height=560,
+        margin=dict(l=10, r=10, t=60, b=10),
+        font=dict(size=13)
+    )
+
+    st.plotly_chart(fig_map, use_container_width=True)
+
+with right:
+    state_long = state_data[["StateAb"] + PARTY_ORDER].melt(
+        id_vars="StateAb",
+        var_name="PartyGroup",
+        value_name="Seats"
+    )
+
+    fig_bar = px.bar(
+        state_long,
+        x="StateAb",
+        y="Seats",
+        color="PartyGroup",
+        category_orders={"PartyGroup": PARTY_ORDER},
         color_discrete_map=PARTY_COLOURS,
-        size="WinnerVotes",
-        size_max=18,
-        hover_name="DivisionNm",
-        hover_data={
-            "StateAb": True,
-            "Winner": True,
-            "WinnerParty": True,
-            "WinnerVotes": ":,",
-            "Latitude": False,
-            "Longitude": False,
-        },
-        zoom=3.2,
-        center={"lat": -27, "lon": 133},
-        height=600,
-    )
-    fig.update_layout(
-        map_style="carto-positron",
-        margin=dict(l=0, r=0, t=0, b=0),
-        legend=dict(
-            title="Winning party",
-            orientation="v",
-            yanchor="top",
-            y=0.98,
-            xanchor="left",
-            x=0.01,
-            bgcolor="rgba(255,255,255,0.85)",
-        ),
-    )
-    return fig
-
-
-# ----------------------------------------------------------------------------
-# Visual 2 — The independent surge
-# ----------------------------------------------------------------------------
-def visual_2_independents(div_summary: pd.DataFrame):
-    """Map of where independents won + where they almost won.
-
-    Categorises every division into 4 groups based on how the
-    top independent performed.
-    """
-    df = div_summary.copy()
-
-    def categorise(row):
-        if row["IndWon"]:
-            return "Won"
-        if row["IndSwing"] >= 15:
-            return "Near miss (swing 15%+)"
-        if row["IndSwing"] >= 5:
-            return "Building (swing 5–15%)"
-        if row["TopIndependent"] == "No independent ran":
-            return "No independent ran"
-        return "No traction"
-
-    df["IndStatus"] = df.apply(categorise, axis=1)
-
-    status_colours = {
-        "Won":                     "#7B3FA0",   # purple
-        "Near miss (swing 15%+)":  "#E94BCB",   # bright pink-purple
-        "Building (swing 5–15%)":  "#FFB347",   # warm orange
-        "No traction":             "#BBBBBB",   # grey
-        "No independent ran":      "#E5E5E5",   # very light grey
-    }
-    status_order = [
-        "Won",
-        "Near miss (swing 15%+)",
-        "Building (swing 5–15%)",
-        "No traction",
-        "No independent ran",
-    ]
-
-    # Bubble size: independents' vote count, with a minimum so dots are visible
-    df["BubbleSize"] = df["IndVotes"].clip(lower=2000)
-
-    fig = px.scatter_map(
-        df,
-        lat="Latitude",
-        lon="Longitude",
-        color="IndStatus",
-        category_orders={"IndStatus": status_order},
-        color_discrete_map=status_colours,
-        size="BubbleSize",
-        size_max=22,
-        hover_name="DivisionNm",
-        hover_data={
-            "StateAb": True,
-            "TopIndependent": True,
-            "IndSwing": ":+.2f",
-            "IndVotes": ":,",
-            "WinnerParty": True,
-            "Winner": True,
-            "BubbleSize": False,
-            "IndStatus": False,
-            "Latitude": False,
-            "Longitude": False,
-        },
-        zoom=3.2,
-        center={"lat": -27, "lon": 133},
-        height=600,
-    )
-    fig.update_layout(
-        map_style="carto-positron",
-        margin=dict(l=0, r=0, t=0, b=0),
-        legend=dict(
-            title="Top independent's result",
-            orientation="v",
-            yanchor="top",
-            y=0.98,
-            xanchor="left",
-            x=0.01,
-            bgcolor="rgba(255,255,255,0.85)",
-        ),
-    )
-    return fig
-
-
-# ----------------------------------------------------------------------------
-# App
-# ----------------------------------------------------------------------------
-def main():
-    div_summary, candidates = load_data()
-
-    # ---- Header
-    st.title("🗳️ The Independents Are Coming")
-    st.markdown(
-        "##### A data narrative on the 2025 Australian federal election"
-    )
-    st.caption(
-        "UTS MDSI · Data Narrative Studio · Group project"
-    )
-    st.divider()
-
-    # ---- Visual 1
-    st.header("1. The headline result")
-    st.markdown(
-        """
-        On 3 May 2025, Australians elected a Labor government with a thumping
-        majority — **94 of 150 House seats**. The Coalition (Liberal + LNP +
-        Nationals combined) was reduced to just 43 seats, its worst result
-        on record.
-
-        Below is the map of who won every electorate. Each dot is one of
-        Australia's 150 federal divisions, sized by total first-preference votes.
-        """
+        title="How seats are distributed across states"
     )
 
-    st.plotly_chart(
-        visual_1_overview(div_summary),
-        use_container_width=True,
+    fig_bar.update_layout(
+        height=420,
+        margin=dict(l=10, r=10, t=50, b=10),
+        xaxis_title="State",
+        yaxis_title="Seats",
+        legend_title_text="Bloc",
+        barmode="stack"
     )
 
-    # Quick summary stats
-    seat_counts = (
-        div_summary.groupby("WinnerParty")
-        .size()
-        .sort_values(ascending=False)
-        .reset_index(name="Seats")
-    )
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Labor seats", int(seat_counts.loc[seat_counts["WinnerParty"] == "Australian Labor Party", "Seats"].values[0]))
-    coalition_seats = int(
-        seat_counts.loc[seat_counts["WinnerParty"].isin(
-            ["Liberal Party", "LNP", "National Party"]
-        ), "Seats"].sum()
-    )
-    col2.metric("Coalition seats", coalition_seats)
-    col3.metric("Independent seats", int(seat_counts.loc[seat_counts["WinnerParty"] == "Independent", "Seats"].values[0]))
-    col4.metric("Greens seats", int(seat_counts.loc[seat_counts["WinnerParty"] == "The Greens", "Seats"].values[0]))
+    st.plotly_chart(fig_bar, use_container_width=True)
 
-    st.divider()
+strongest_ind_state_row = state_data.sort_values("Independent", ascending=False).iloc[0]
+strongest_ind_state = strongest_ind_state_row["StateAb"]
+strongest_ind_count = int(strongest_ind_state_row["Independent"])
 
-    # ---- Visual 2
-    st.header("2. The story underneath")
-    st.markdown(
-        """
-        That headline obscures something more interesting.
+st.info(
+    f"Insert Explanations Here")
 
-        **10 independents won.** But look at where they *almost* won. The map
-        below shows every electorate categorised by how the leading
-        independent candidate performed — whether they won, came agonisingly
-        close, or are building support for next time.
-        """
-    )
+st.caption(
+    "This overview is intentionally shown at the state level to keep the first scene simple and readable. "
+    "Later sections can zoom into electorates to show where independents are strongest."
+)
 
-    st.plotly_chart(
-        visual_2_independents(div_summary),
-        use_container_width=True,
-    )
-
-    # Pull out the near-miss numbers for the takeaway
-    df = div_summary.copy()
-    won = df[df["IndWon"]]
-    near_miss = df[(~df["IndWon"]) & (df["IndSwing"] >= 15)]
-    building = df[(~df["IndWon"]) & (df["IndSwing"] >= 5) & (df["IndSwing"] < 15)]
-
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Independents who won", len(won))
-    col2.metric("Near misses (15%+ swing)", len(near_miss))
-    col3.metric("Building support (5–15% swing)", len(building))
-
-    st.markdown(
-        f"""
-        **In 2022 the teals shocked Australia by winning 6 wealthy Liberal seats.
-        In 2025 they held them — but {len(near_miss)} more independents picked
-        up swings of 15 percentage points or more without winning.**
-
-        These weren't the inner-city seats people associate with the teals.
-        They were outer suburbs, regional towns, and overlooked corners of
-        the country. Hover any pink dot above to see who came close, where,
-        and by how much.
-        """
-    )
-
-    if len(near_miss) > 0:
-        st.markdown("##### The closest 'near misses'")
-        near_miss_table = near_miss.nlargest(10, "IndSwing")[
-            ["DivisionNm", "StateAb", "TopIndependent", "IndSwing", "IndVotes", "WinnerParty"]
-        ].rename(columns={
-            "DivisionNm": "Division",
-            "StateAb": "State",
-            "TopIndependent": "Independent candidate",
-            "IndSwing": "Swing (pp)",
-            "IndVotes": "Votes",
-            "WinnerParty": "Seat held by",
-        })
-        st.dataframe(near_miss_table, hide_index=True, use_container_width=True)
-
-    st.divider()
-    st.caption(
-        "Data source: Australian Electoral Commission, House First Preferences "
-        "by Candidate by Vote Type, 2025 Federal Election."
-    )
-
-
-if __name__ == "__main__":
-    main()
-
+st.divider()
+st.caption(
+    "Data source: Australian Electoral Commission, House First Preferences by Candidate by Vote Type, "
+    "cleaned and merged with polling place centroids."
+)
