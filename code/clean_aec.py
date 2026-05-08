@@ -11,8 +11,6 @@ ELECTIONS = {
     2025: {"id": "31496", "date": "2025-05-03"},
 }
 
-STATES = ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"]
-
 PARTY_MAP = {
     "ALP":  "Australian Labor Party",
     "LP":   "Liberal Party",
@@ -46,7 +44,7 @@ FINAL_COLUMNS = [
 BASE_URL = "https://results.aec.gov.au/{id}/Website/Downloads"
 
 
-def fetch(url: str, label: str, skip_rows: int = 1) -> pd.DataFrame | None:
+def fetch(url, label, skip_rows=1):
     try:
         r = requests.get(url, timeout=30)
         r.raise_for_status()
@@ -59,39 +57,37 @@ def fetch(url: str, label: str, skip_rows: int = 1) -> pd.DataFrame | None:
         return None
 
 
-def download_first_prefs(election_id: str) -> pd.DataFrame | None:
+def download_first_prefs(election_id):
     base = BASE_URL.format(id=election_id)
-    url = f"{base}/HouseFirstPrefsByCandidateByVoteTypeDownload-{election_id}.csv"
-    df = fetch(url, "First Preferences (by candidate/vote type)")
+    df = fetch(f"{base}/HouseFirstPrefsByCandidateByVoteTypeDownload-{election_id}.csv",
+               "First Preferences (by candidate/vote type)")
     if df is not None:
         return df
-
-    # Older fallback name used before 2016
-    url2 = f"{base}/HouseFirstPreferencesDownload-{election_id}.csv"
-    return fetch(url2, "First Preferences (legacy name)")
+    return fetch(f"{base}/HouseFirstPreferencesDownload-{election_id}.csv",
+                 "First Preferences (legacy name)")
 
 
-def download_polling_places(election_id: str) -> pd.DataFrame | None:
-    url = f"{BASE_URL.format(id=election_id)}/GeneralPollingPlacesDownload-{election_id}.csv"
-    return fetch(url, "Polling Places")
+def download_polling_places(election_id):
+    return fetch(f"{BASE_URL.format(id=election_id)}/GeneralPollingPlacesDownload-{election_id}.csv",
+                 "Polling Places")
 
 
-def download_enrolment(election_id: str) -> pd.DataFrame | None:
-    url = f"{BASE_URL.format(id=election_id)}/GeneralEnrolmentByDivisionDownload-{election_id}.csv"
-    return fetch(url, "Enrolment by Division")
+def download_enrolment(election_id):
+    return fetch(f"{BASE_URL.format(id=election_id)}/GeneralEnrolmentByDivisionDownload-{election_id}.csv",
+                 "Enrolment by Division")
 
 
-def download_turnout(election_id: str) -> pd.DataFrame | None:
-    url = f"{BASE_URL.format(id=election_id)}/HouseTurnoutByDivisionDownload-{election_id}.csv"
-    return fetch(url, "Turnout by Division")
+def download_turnout(election_id):
+    return fetch(f"{BASE_URL.format(id=election_id)}/HouseTurnoutByDivisionDownload-{election_id}.csv",
+                 "Turnout by Division")
 
 
-def download_tcp(election_id: str) -> pd.DataFrame | None:
-    url = f"{BASE_URL.format(id=election_id)}/HouseTcpByCandidateByVoteTypeDownload-{election_id}.csv"
-    return fetch(url, "Two-Candidate Preferred")
+def download_tcp(election_id):
+    return fetch(f"{BASE_URL.format(id=election_id)}/HouseTcpByCandidateByVoteTypeDownload-{election_id}.csv",
+                 "Two-Candidate Preferred")
 
 
-def clean_first_prefs(df: pd.DataFrame) -> pd.DataFrame:
+def clean_first_prefs(df):
     before = len(df)
     df = df.dropna(subset=["TotalVotes"])
     dropped = before - len(df)
@@ -108,8 +104,8 @@ def clean_first_prefs(df: pd.DataFrame) -> pd.DataFrame:
         df["PartyNm"].str.strip() if "PartyNm" in df.columns else "Unknown"
     )
 
-    given  = df["GivenNm"].str.strip()  if "GivenNm"  in df.columns else ""
-    surname = df["Surname"].str.strip() if "Surname"   in df.columns else ""
+    given   = df["GivenNm"].str.strip()  if "GivenNm"  in df.columns else ""
+    surname = df["Surname"].str.strip()  if "Surname"   in df.columns else ""
     df["CandidateName"] = (given + " " + surname).str.strip().str.title()
 
     df["Elected"] = df["Elected"].astype(str).str.strip().str.upper() == "Y"
@@ -122,7 +118,7 @@ def clean_first_prefs(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def clean_polling_places(df: pd.DataFrame) -> pd.DataFrame:
+def clean_polling_places(df):
     before = len(df)
     df = df.dropna(subset=["Latitude", "Longitude"])
     print(f"           dropped {before - len(df)} rows missing coordinates")
@@ -142,7 +138,7 @@ def clean_polling_places(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def build_division_geo(pp: pd.DataFrame) -> pd.DataFrame:
+def build_division_geo(pp):
     return (
         pp.groupby("DivisionID")
           .agg(
@@ -154,7 +150,7 @@ def build_division_geo(pp: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def build_tcp_summary(tcp: pd.DataFrame) -> pd.DataFrame:
+def build_tcp_summary(tcp):
     tcp = tcp.copy()
     tcp["PartyNm_clean"] = tcp["PartyAb"].map(PARTY_MAP).fillna(
         tcp["PartyNm"].str.strip() if "PartyNm" in tcp.columns else "Unknown"
@@ -165,7 +161,7 @@ def build_tcp_summary(tcp: pd.DataFrame) -> pd.DataFrame:
     for div_id, grp in tcp.groupby("DivisionID"):
         if len(grp) < 2:
             continue
-        total = grp["TotalVotes"].sum()
+        total  = grp["TotalVotes"].sum()
         winner = grp[grp["Elected"]].iloc[0] if grp["Elected"].any() else grp.nlargest(1, "TotalVotes").iloc[0]
         runner = grp[~grp.index.isin([winner.name])].nlargest(1, "TotalVotes")
         if runner.empty:
@@ -182,35 +178,26 @@ def build_tcp_summary(tcp: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def add_enrichment(df: pd.DataFrame, enrolment: pd.DataFrame | None,
-                   turnout: pd.DataFrame | None, tcp: pd.DataFrame | None) -> pd.DataFrame:
+def add_enrichment(df, enrolment, turnout, tcp):
     if enrolment is not None and "Enrolment" in enrolment.columns:
         slim = enrolment[["DivisionID", "Enrolment"]].drop_duplicates("DivisionID")
         df = df.merge(slim, on="DivisionID", how="left")
 
     if turnout is not None:
-        t_cols = ["DivisionID"]
-        for c in ["Turnout", "TurnoutPercentage", "TurnoutSwing"]:
-            if c in turnout.columns:
-                t_cols.append(c)
-        slim = turnout[t_cols].drop_duplicates("DivisionID")
-        df = df.merge(slim, on="DivisionID", how="left")
+        t_cols = ["DivisionID"] + [c for c in ["Turnout", "TurnoutPercentage", "TurnoutSwing"]
+                                   if c in turnout.columns]
+        df = df.merge(turnout[t_cols].drop_duplicates("DivisionID"), on="DivisionID", how="left")
 
     if tcp is not None:
-        tcp_summary = build_tcp_summary(tcp)
-        df = df.merge(tcp_summary, on="DivisionID", how="left")
+        df = df.merge(build_tcp_summary(tcp), on="DivisionID", how="left")
 
     if "Enrolment" in df.columns and "Turnout" in df.columns:
         div_total = df.groupby("DivisionID")["TotalVotes"].transform("sum")
         df["InformalVotes"] = (df["Turnout"] - div_total).clip(lower=0)
-        df["InformalPct"] = (
-            df["InformalVotes"] / df["Turnout"].replace(0, pd.NA) * 100
-        ).round(2)
+        df["InformalPct"] = (df["InformalVotes"] / df["Turnout"].replace(0, pd.NA) * 100).round(2)
 
     if "Swing" in df.columns:
-        swing_mean = df["Swing"].mean()
-        swing_std  = df["Swing"].std()
-        df["SwingZScore"] = ((df["Swing"] - swing_mean) / swing_std).round(3)
+        df["SwingZScore"] = ((df["Swing"] - df["Swing"].mean()) / df["Swing"].std()).round(3)
 
     if "TcpMarginPct" in df.columns:
         df["SeatSafety"] = pd.cut(
@@ -223,8 +210,8 @@ def add_enrichment(df: pd.DataFrame, enrolment: pd.DataFrame | None,
     return df
 
 
-def process_election(year: int, config: dict) -> pd.DataFrame | None:
-    election_id = config["id"]
+def process_election(year, config):
+    election_id   = config["id"]
     election_date = config["date"]
 
     print(f"\n{'='*60}")
@@ -236,10 +223,10 @@ def process_election(year: int, config: dict) -> pd.DataFrame | None:
         print(f"  SKIP — no first preferences data for {year}")
         return None
 
-    pp_raw       = download_polling_places(election_id)
-    enrolment    = download_enrolment(election_id)
-    turnout      = download_turnout(election_id)
-    tcp          = download_tcp(election_id)
+    pp_raw    = download_polling_places(election_id)
+    enrolment = download_enrolment(election_id)
+    turnout   = download_turnout(election_id)
+    tcp       = download_tcp(election_id)
 
     fp_clean = clean_first_prefs(fp_raw)
     print(f"    first prefs clean: {len(fp_clean):,} rows")
@@ -260,19 +247,19 @@ def process_election(year: int, config: dict) -> pd.DataFrame | None:
 
     path = os.path.join("data", f"aec_{year}_cleaned.csv")
     out.to_csv(path, index=False, encoding="utf-8-sig")
-    print(f"    saved → {path}  ({out.shape[0]:,} rows × {out.shape[1]} cols)")
+    print(f"    saved -> {path}  ({out.shape[0]:,} rows x {out.shape[1]} cols)")
 
     return out
 
 
-def eda_summary(df: pd.DataFrame) -> None:
+def eda_summary(df):
     print(f"\n{'='*60}")
     print("  COMBINED EDA SUMMARY")
     print(f"{'='*60}")
-    print(f"  Total rows           : {len(df):,}")
-    print(f"  Elections            : {sorted(df['ElectionYear'].unique().tolist())}")
-    print(f"  Unique divisions     : {df['DivisionNm'].nunique()}")
-    print(f"  Unique candidates    : {df['CandidateName'].nunique()}")
+    print(f"  Total rows        : {len(df):,}")
+    print(f"  Elections         : {sorted(df['ElectionYear'].unique().tolist())}")
+    print(f"  Unique divisions  : {df['DivisionNm'].nunique()}")
+    print(f"  Unique candidates : {df['CandidateName'].nunique()}")
 
     print("\n  Rows per election:")
     for yr, grp in df.groupby("ElectionYear"):
@@ -292,20 +279,15 @@ def eda_summary(df: pd.DataFrame) -> None:
 
     if "TurnoutPercentage" in df.columns:
         print("\n  Average turnout by election:")
-        turnout = (
-            df.drop_duplicates(["ElectionYear", "DivisionID"])
-            .groupby("ElectionYear")["TurnoutPercentage"]
-            .mean()
-        )
-        for yr, pct in turnout.items():
+        for yr, pct in df.drop_duplicates(["ElectionYear", "DivisionID"]).groupby(
+                "ElectionYear")["TurnoutPercentage"].mean().items():
             print(f"    {yr}: {pct:.1f}%")
 
-    print(f"\n  Missing values (combined):")
+    print("\n  Missing values (combined):")
     for col in ["Latitude", "Longitude", "TotalVotes", "Swing", "TurnoutPercentage", "TcpMarginPct"]:
         if col in df.columns:
             n = df[col].isna().sum()
-            pct = n / len(df) * 100
-            print(f"    {col:<25} {n:>6} missing ({pct:.1f}%)")
+            print(f"    {col:<25} {n:>6} missing ({n / len(df) * 100:.1f}%)")
 
 
 def main():
@@ -331,8 +313,8 @@ def main():
 
     combined_path = os.path.join("data", "aec_combined_2013_2025.csv")
     combined.to_csv(combined_path, index=False, encoding="utf-8-sig")
-    print(f"\n  Combined file saved → {combined_path}")
-    print(f"  Shape: {combined.shape[0]:,} rows × {combined.shape[1]} columns")
+    print(f"\n  Combined file saved -> {combined_path}")
+    print(f"  Shape: {combined.shape[0]:,} rows x {combined.shape[1]} columns")
     print("\nDone.")
 
 
