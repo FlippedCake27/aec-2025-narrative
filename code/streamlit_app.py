@@ -87,7 +87,8 @@ if winners.empty:
     )
 
 seat_counts = (
-    winners.groupby(["StateAb", "PartyGroup"])
+    winners[winners["ElectionYear"] == 2025]
+    .groupby(["StateAb", "PartyGroup"])
     .size()
     .reset_index(name="Seats")
 )
@@ -123,17 +124,20 @@ state_coords = {
     "NSW": {"lat": -32.5, "lon": 147.0},
     "VIC": {"lat": -37.0, "lon": 144.5},
     "QLD": {"lat": -22.5, "lon": 144.5},
-    "WA": {"lat": -25.5, "lon": 122.0},
-    "SA": {"lat": -30.0, "lon": 135.5},
-    "TAS": {"lat": -42.0, "lon": 146.5},
-    "ACT": {"lat": -35.5, "lon": 149.0},
-    "NT": {"lat": -19.0, "lon": 133.0}
+    "WA":  {"lat": -25.5, "lon": 122.0},
+    "SA":  {"lat": -30.0, "lon": 135.5},
+    "TAS": {"lat": -42.5, "lon": 146.5},
+    "ACT": {"lat": -35.5, "lon": 150.5},
+    "NT":  {"lat": -19.0, "lon": 133.0}
 }
 
 state_data["lat"] = state_data["StateAb"].map(lambda x: state_coords[x]["lat"])
 state_data["lon"] = state_data["StateAb"].map(lambda x: state_coords[x]["lon"])
 
-state_data["BubbleSize"] = (state_data["TotalSeats"]) + 25
+import math
+state_data["BubbleSize"] = state_data["TotalSeats"].apply(
+    lambda s: math.sqrt(s) * 11 + 10
+)
 
 state_data["Tooltip"] = state_data.apply(
     lambda row: (
@@ -175,22 +179,28 @@ with left:
     with open(geojson_path, "r", encoding="utf-8") as f:
         australia_geojson = json.load(f)
 
+    state_data["BubbleLabel"] = state_data.apply(
+        lambda r: f"{r['StateAb']}  {int(r['TotalSeats'])}seats", axis=1
+    )
+
     fig_map = go.Figure()
 
+    # Dark base layer — makes coloured bubbles pop
     fig_map.add_trace(
         go.Choropleth(
             geojson=australia_geojson,
             locations=state_data["StateName"],
             z=[1] * len(state_data),
             featureidkey="properties.STATE_NAME",
-            colorscale=[[0, "#f5f5f5"], [1, "#f5f5f5"]],
+            colorscale=[[0, "#1e2d3d"], [1, "#1e2d3d"]],
             showscale=False,
-            marker_line_color="white",
-            marker_line_width=2,
-            hoverinfo="skip"
+            marker_line_color="#4a6080",
+            marker_line_width=1.5,
+            hoverinfo="skip",
         )
     )
 
+    # Coloured bubbles, one per state
     fig_map.add_trace(
         go.Scattergeo(
             lon=state_data["lon"],
@@ -200,44 +210,64 @@ with left:
                 size=state_data["BubbleSize"],
                 color=state_data["DominantBloc"].map(PARTY_COLOURS),
                 opacity=0.95,
-                line=dict(width=1.5, color="white")
+                line=dict(width=2.5, color="white"),
             ),
             text=state_data["Tooltip"],
             hovertemplate="%{text}<extra></extra>",
-            showlegend=False
+            showlegend=False,
         )
     )
 
+    # State abbreviation label inside bubble
     fig_map.add_trace(
         go.Scattergeo(
             lon=state_data["lon"],
             lat=state_data["lat"],
-            text=state_data["StateLabel"],
+            text=state_data["StateAb"],
             mode="text",
-            textfont=dict(
-                size=12,
-                color="white",
-                family="Arial Black"
-            ),
+            textfont=dict(size=12, color="white", family="Arial Black"),
             showlegend=False,
-            hoverinfo="skip"
+            hoverinfo="skip",
         )
     )
+
+    # Invisible traces for legend
+    for bloc in PARTY_ORDER:
+        if bloc in state_data["DominantBloc"].values:
+            count = int(state_data.loc[state_data["DominantBloc"] == bloc, "TotalSeats"].sum())
+            fig_map.add_trace(go.Scattergeo(
+                lon=[None], lat=[None],
+                mode="markers",
+                marker=dict(size=12, color=PARTY_COLOURS[bloc]),
+                name=f"{bloc} ({count} seats)",
+                showlegend=True,
+            ))
 
     fig_map.update_geos(
         fitbounds="locations",
         visible=False,
         showcountries=False,
-        showcoastlines=True,
-        coastlinecolor="LightGray",
-        projection_type="equirectangular"
+        showcoastlines=False,
+        projection_type="equirectangular",
+        bgcolor="#0f1923",
     )
 
     fig_map.update_layout(
         title="Which bloc dominates each state?",
         height=560,
-        margin=dict(l=10, r=10, t=60, b=10),
-        font=dict(size=13)
+        margin=dict(l=10, r=10, t=50, b=10),
+        paper_bgcolor="#0f1923",
+        font=dict(size=13, color="white"),
+        legend=dict(
+            title="Dominant bloc",
+            orientation="v",
+            bgcolor="rgba(255,255,255,0.08)",
+            bordercolor="rgba(255,255,255,0.2)",
+            borderwidth=1,
+            x=0.01, y=0.98,
+            font=dict(color="white"),
+        ),
+        title_font=dict(color="white"),
     )
 
     st.plotly_chart(fig_map, use_container_width=True)
@@ -281,6 +311,200 @@ st.caption(
     "This overview is intentionally shown at the state level to keep the first scene simple and readable. "
     "Later sections can zoom into electorates to show where independents are strongest."
 )
+
+st.divider()
+
+# ── Section 2: Rise of Independents ──────────────────────────────────────────
+st.markdown("## 2. The rise of independents")
+st.markdown(
+    """
+    Insert Explanations Here
+    """
+)
+
+seats_by_year = (
+    winners.groupby(["ElectionYear", "PartyGroup"])
+    .size()
+    .reset_index(name="Seats")
+)
+
+# Ensure all parties appear in all years (fill missing with 0)
+all_years = sorted(df["ElectionYear"].unique())
+idx = pd.MultiIndex.from_product([all_years, PARTY_ORDER], names=["ElectionYear", "PartyGroup"])
+seats_by_year = (
+    seats_by_year.set_index(["ElectionYear", "PartyGroup"])
+    .reindex(idx, fill_value=0)
+    .reset_index()
+)
+
+fig_trend = go.Figure()
+
+for party in PARTY_ORDER:
+    party_data = seats_by_year[seats_by_year["PartyGroup"] == party].sort_values("ElectionYear")
+    is_ind = party == "Independent"
+    fig_trend.add_trace(go.Scatter(
+        x=party_data["ElectionYear"],
+        y=party_data["Seats"],
+        name=party,
+        mode="lines+markers",
+        line=dict(
+            color=PARTY_COLOURS[party],
+            width=4 if is_ind else 2,
+            dash="solid" if is_ind else "dot"
+        ),
+        marker=dict(size=10 if is_ind else 6),
+        hovertemplate=f"<b>{party}</b><br>%{{x}}: %{{y}} seats<extra></extra>"
+    ))
+
+fig_trend.add_annotation(
+    x=2022, y=10,
+    text="Teal wave:<br>3 → 10 seats",
+    showarrow=True, arrowhead=2,
+    ax=-70, ay=-45,
+    font=dict(size=12, color=PARTY_COLOURS["Independent"]),
+    bgcolor="rgba(0,0,0,0.6)",
+    bordercolor=PARTY_COLOURS["Independent"],
+    borderwidth=1.5
+)
+
+fig_trend.update_layout(
+    title="Seats won per election by party group (2013–2025)",
+    xaxis=dict(tickvals=all_years, title="Election Year", tickformat="d"),
+    yaxis_title="Seats",
+    height=420,
+    margin=dict(l=10, r=10, t=50, b=10),
+    legend_title_text="Party bloc",
+)
+
+st.plotly_chart(fig_trend, use_container_width=True)
+
+st.info("Insert Explanations Here")
+
+st.divider()
+
+# ── Section 3: Momentum — how did they win? ───────────────────────────────────
+st.markdown("## 3. The momentum behind the wins")
+st.markdown(
+    """
+    Insert Explanations Here
+    """
+)
+
+w25 = winners[winners["ElectionYear"] == 2025].copy()
+swing_by_party = (
+    w25.groupby("PartyGroup")["Swing"]
+    .mean()
+    .reset_index()
+    .sort_values("Swing", ascending=True)
+)
+swing_by_party = swing_by_party[swing_by_party["PartyGroup"].isin(["Labor", "Coalition", "Greens", "Independent"])]
+
+fig_swing = go.Figure(go.Bar(
+    x=swing_by_party["Swing"],
+    y=swing_by_party["PartyGroup"],
+    orientation="h",
+    marker_color=[PARTY_COLOURS[p] for p in swing_by_party["PartyGroup"]],
+    text=swing_by_party["Swing"].apply(lambda x: f"{x:+.1f}%"),
+    textposition="outside",
+    hovertemplate="<b>%{y}</b><br>Average swing: %{text}<extra></extra>"
+))
+
+fig_swing.add_vline(x=0, line_color="white", line_width=1.5, line_dash="dash")
+
+fig_swing.update_layout(
+    title="Average swing toward winning candidates by party bloc (2025)",
+    xaxis=dict(title="Average swing (%)", ticksuffix="%"),
+    yaxis_title="",
+    height=340,
+    margin=dict(l=10, r=80, t=50, b=10),
+)
+
+st.plotly_chart(fig_swing, use_container_width=True)
+
+st.info("Insert Explanations Here")
+
+st.divider()
+
+# ── Section 4: The representation gap ────────────────────────────────────────
+st.markdown("## 4. The representation gap: votes vs seats")
+st.markdown(
+    """
+    Insert Explanations Here
+    """
+)
+
+df25 = df[df["ElectionYear"] == 2025]
+total_votes_25 = df25["TotalVotes"].sum()
+
+vote_share_25 = (
+    df25.groupby("PartyGroup")["TotalVotes"].sum() / total_votes_25 * 100
+).reset_index(name="VoteShare")
+
+seats_25 = (
+    winners[winners["ElectionYear"] == 2025]
+    .groupby("PartyGroup").size()
+    .reset_index(name="Seats")
+)
+total_seats_25 = int(seats_25["Seats"].sum())
+seats_25["SeatShare"] = seats_25["Seats"] / total_seats_25 * 100
+
+dumbbell_df = vote_share_25.merge(seats_25[["PartyGroup", "SeatShare"]], on="PartyGroup", how="left").fillna(0)
+dumbbell_df = dumbbell_df[dumbbell_df["PartyGroup"].isin(PARTY_ORDER)]
+dumbbell_df["SortKey"] = dumbbell_df["PartyGroup"].map({p: i for i, p in enumerate(reversed(PARTY_ORDER))})
+dumbbell_df = dumbbell_df.sort_values("SortKey")
+
+fig_db = go.Figure()
+
+for _, row in dumbbell_df.iterrows():
+    colour = PARTY_COLOURS.get(row["PartyGroup"], "#999999")
+    fig_db.add_trace(go.Scatter(
+        x=[row["VoteShare"], row["SeatShare"]],
+        y=[row["PartyGroup"], row["PartyGroup"]],
+        mode="lines",
+        line=dict(color=colour, width=3),
+        showlegend=False,
+        hoverinfo="skip"
+    ))
+
+fig_db.add_trace(go.Scatter(
+    x=dumbbell_df["VoteShare"],
+    y=dumbbell_df["PartyGroup"],
+    mode="markers",
+    name="Vote share %",
+    marker=dict(
+        size=16,
+        color="rgba(0,0,0,0)",
+        line=dict(width=3, color=[PARTY_COLOURS.get(p, "#999") for p in dumbbell_df["PartyGroup"]])
+    ),
+    text=dumbbell_df["VoteShare"].apply(lambda x: f"{x:.1f}%"),
+    hovertemplate="<b>%{y}</b><br>Votes: %{text}<extra></extra>"
+))
+
+fig_db.add_trace(go.Scatter(
+    x=dumbbell_df["SeatShare"],
+    y=dumbbell_df["PartyGroup"],
+    mode="markers",
+    name="Seat share %",
+    marker=dict(
+        size=16,
+        color=[PARTY_COLOURS.get(p, "#999") for p in dumbbell_df["PartyGroup"]]
+    ),
+    text=dumbbell_df["SeatShare"].apply(lambda x: f"{x:.1f}%"),
+    hovertemplate="<b>%{y}</b><br>Seats: %{text}<extra></extra>"
+))
+
+fig_db.update_layout(
+    title="Vote share vs seat share — 2025 Australian federal election",
+    xaxis=dict(title="Percentage (%)", ticksuffix="%", range=[-2, 70]),
+    yaxis_title="",
+    height=380,
+    margin=dict(l=10, r=10, t=50, b=10),
+    legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="right", x=1),
+)
+
+st.plotly_chart(fig_db, use_container_width=True)
+
+st.info("Insert Explanations Here")
 
 st.divider()
 st.caption(
