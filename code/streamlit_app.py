@@ -18,7 +18,7 @@ st.set_page_config(
 
 # App title and subtitle shown at the top of the page
 st.title("🗳️ Beyond the Headlines")
-st.markdown("##### A data narrative on the 2025 Australian federal election")
+st.markdown("##### **A DATA NARRATIVE ON THE 2025 AUSTRALIAN FEDERAL ELECTION AND AUSTRALIAN POLITICS**")
 st.caption("UTS 36104 · Data Visualisation and Narratives · Group project")
 st.divider()
 
@@ -144,8 +144,11 @@ state_data["Tooltip"] = state_data.apply(
 
 # SECTION 1 — AUSTRALIA'S CURRENT ELECTORAL MAP
 # Shows a bubble map (dominant bloc per state) + stacked bar chart (seats by state)
-st.markdown("## 1. Australia's current electoral map")
-st.markdown("Insert Explanations Here")
+st.markdown("## 1. AUSTRALIA'S CURRENT ELECTORAL MAP")
+st.markdown(
+    "**Labor and Coalition took the 2025 votes by a landslide visible at the state level seen on the map. "
+    "However, this dominance was a longstanding feature of Australian politics, with little room for minor parties.**"
+)
 
 # Filter winners to 2025 only for the summary metrics at the top
 w25 = winners[winners["ElectionYear"] == 2025]
@@ -271,18 +274,26 @@ with right:
     )
     st.plotly_chart(fig_bar, use_container_width=True)
 
-st.info("Insert Explanations Here")
+st.info(
+    "Through this dominance, a certain group has silently gained ground: independents. The stacked bar chart shows how "
+    "they won seats in half of the states, showing their increasing relevance. Furthermore, the Independents managed to win " 
+    "more seats than the third major party, the Greens. This marks a remarkable feat signalling a significant shift in the political landscape."
+)
 st.caption(
     "This overview is intentionally shown at the state level. "
-    "Later sections zoom into electorates to show where independents are strongest."
+    "Later sections zoom into further details to show where independents are strongest."
 )
 
 st.divider()
 
 # SECTION 2 — THE RISE OF INDEPENDENTS
 # Line chart showing seats won by each party group across every election 2013–2025
-st.markdown("## 2. The rise of independents")
-st.markdown("Insert Explanations Here")
+st.markdown("## 2. THE RISE OF INDEPENDENTS")
+st.markdown(
+    "**Australia's lower house has long been a two-party system. Labor and the Coalition have "
+    "always dominated the seat count, with the Greens as a distant third. "
+    "Independents and minor parties have rarely won more than a handful of seats, and often none at all.**"
+)
 
 # Count seats won per party per election year
 seats_by_year = (
@@ -330,14 +341,18 @@ fig_trend.update_layout(
     font=dict(color="#e8edf2"),
 )
 st.plotly_chart(fig_trend, use_container_width=True)
-st.info("Insert Explanations Here")
+st.info(
+    "However, 2022 marks a pivotal change. The number of independents surged from 3 to 10, a more than threefold increase. " 
+    "This 'teal wave' was unprecedented in recent Australian political history, signaling a significant shift in voter sentiment "
+    "and the political landscape. The 2025 election showed similar momentum, with independents maintaining their increased presence."
+)
 
 st.divider()
 
 # SECTION 3 — THE MOMENTUM BEHIND THE WINS
 # Horizontal bar chart of average first-preference swing for 2025 winners by party
-st.markdown("## 3. The momentum behind the wins")
-st.markdown("Insert Explanations Here")
+st.markdown("## 3. THE MOMENTUM BEHIND THE WINS")
+st.markdown("**Insert Explanations Here**")
 
 # Average swing for winning candidates only, grouped by party bloc
 # Swing = change in first-preference vote share compared to the previous election
@@ -376,8 +391,12 @@ st.divider()
 # SECTION 4 — WHERE ARE INDEPENDENTS STRONGEST?
 # Scatter map showing every independent candidate's vote share across all electorates
 # Elected candidates shown as solid dots; unsuccessful ones as faint hollow dots
-st.markdown("## 4. Where are independents strongest?")
-st.markdown("Insert Explanations Here")
+st.markdown("## 4. WHERE ARE INDEPENDENTS STRONGEST?")
+st.markdown(
+    "**Not all states are equally hospitable to independents. The map reveals a clear "
+    "pattern: the strongest independent performances cluster in inner-city and coastal "
+    "areas.**"
+)
 
 # Start with all 2025 candidates and calculate each one's share of their division's total vote
 df25_all = df[df["ElectionYear"] == 2025].copy()
@@ -466,15 +485,19 @@ fig_ind.update_layout(
     ),
 )
 st.plotly_chart(fig_ind, use_container_width=True)
-st.info("Insert Explanations Here")
+st.info(
+    "The density of dots along the NSW coast and Queensland reveals where independents are strongest. "
+    "These regions highlight where independents are most competitive. "
+    "In contrast, inland and regional areas show fewer independent candidates, but some still managing to win."
+)
 
 st.divider()
 
 # SECTION 5 — THE REPRESENTATION GAP: VOTES VS SEATS
 # Dumbbell chart comparing how many votes each party got vs how many seats they won
 # The gap between the two dots shows how fairly (or unfairly) the system translates votes to seats
-st.markdown("## 5. The representation gap: votes vs seats")
-st.markdown("Insert Explanations Here")
+st.markdown("## 5. THE REPRESENTATION GAP: VOTES VS SEATS")
+st.markdown("**Insert Explanations Here**")
 
 # Vote share: each party's total first-preference votes as a % of all 2025 votes
 df25 = df[df["ElectionYear"] == 2025]
@@ -508,6 +531,16 @@ for _, row in dumbbell_df.iterrows():
         showlegend=False, hoverinfo="skip"
     ))
 
+# Per-party label positions: label always appears on the outer side of each dot
+vote_textpos = [
+    "middle left" if vs <= ss else "middle right"
+    for vs, ss in zip(dumbbell_df["VoteShare"], dumbbell_df["SeatShare"])
+]
+seat_textpos = [
+    "middle right" if vs <= ss else "middle left"
+    for vs, ss in zip(dumbbell_df["VoteShare"], dumbbell_df["SeatShare"])
+]
+
 # Left dot (hollow) = vote share — open circle to visually suggest "input"
 fig_db.add_trace(go.Scatter(
     x=dumbbell_df["VoteShare"],
@@ -517,8 +550,8 @@ fig_db.add_trace(go.Scatter(
         size=16, color="rgba(0,0,0,0)",
         line=dict(width=3, color=[PARTY_COLOURS.get(p, "#999") for p in dumbbell_df["PartyGroup"]])
     ),
-    text=dumbbell_df["VoteShare"].apply(lambda x: f"{x:.1f}%"),
-    textposition="middle left",     # label sits to the left of the dot
+    text=dumbbell_df["VoteShare"].apply(lambda v: f"{v:.1f}%"),
+    textposition=vote_textpos,
     textfont=dict(size=11, color="#e8edf2"),
     customdata=dumbbell_df[["SeatShare", "Seats"]].values,
     hovertemplate=(
@@ -537,8 +570,8 @@ fig_db.add_trace(go.Scatter(
         size=16,
         color=[PARTY_COLOURS.get(p, "#999") for p in dumbbell_df["PartyGroup"]]
     ),
-    text=dumbbell_df["SeatShare"].apply(lambda x: f"{x:.1f}%"),
-    textposition="middle right",    # label sits to the right of the dot
+    text=dumbbell_df["SeatShare"].apply(lambda v: f"{v:.1f}%"),
+    textposition=seat_textpos,
     textfont=dict(size=11, color="#e8edf2"),
     customdata=dumbbell_df[["VoteShare", "Seats"]].values,
     hovertemplate=(
