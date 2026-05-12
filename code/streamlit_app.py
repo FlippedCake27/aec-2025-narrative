@@ -83,6 +83,15 @@ STATE_COORDS = {
     "ACT": (-35.5, 150.5), "NT":  (-19.0, 133.0)
 }
 
+# STATE FILTER
+all_states = sorted(df["StateAb"].dropna().unique())
+selected_states = st.multiselect(
+    "Filter by state", options=all_states, default=all_states,
+    help="Select one or more states to filter all charts below. The overview map always shows all of Australia."
+)
+if selected_states:
+    df = df[df["StateAb"].isin(selected_states)].copy()
+
 # WINNERS TABLE
 # Filter down to only the winning candidates
 # Fallback: if ElectedBool is all False (data issue), pick the top vote-getter per division
