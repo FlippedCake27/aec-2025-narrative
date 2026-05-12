@@ -352,7 +352,7 @@ st.divider()
 # SECTION 3 — THE MOMENTUM BEHIND THE WINS
 # Horizontal bar chart of average first-preference swing for 2025 winners by party
 st.markdown("## 3. THE MOMENTUM BEHIND THE WINS")
-st.markdown("**Insert Explanations Here**")
+st.markdown("**Independents won with the biggest swings of any group. The Coalition bled votes even in seats it held.**")
 
 # Average swing for winning candidates only, grouped by party bloc
 # Swing = change in first-preference vote share compared to the previous election
@@ -384,7 +384,11 @@ fig_swing.update_layout(
     font=dict(color="#e8edf2"),
 )
 st.plotly_chart(fig_swing, use_container_width=True)
-st.info("Insert Explanations Here")
+st.info(
+    "Independent winners averaged a **+6.9% swing**, more than twice Labor's +2.6%. "
+    "Coalition winners averaged **-3.0%**, holding seats despite losing ground. "
+    "Momentum in 2025 clearly ran against the major parties."
+)
 
 st.divider()
 
@@ -497,7 +501,7 @@ st.divider()
 # Dumbbell chart comparing how many votes each party got vs how many seats they won
 # The gap between the two dots shows how fairly (or unfairly) the system translates votes to seats
 st.markdown("## 5. THE REPRESENTATION GAP: VOTES VS SEATS")
-st.markdown("**Insert Explanations Here**")
+st.markdown("**Labor turned 34.6% of votes into 62.7% of seats. The Greens won 12.2% of votes and got one seat.**")
 
 # Vote share: each party's total first-preference votes as a % of all 2025 votes
 df25 = df[df["ElectionYear"] == 2025]
@@ -592,7 +596,11 @@ fig_db.update_layout(
     font=dict(color="#e8edf2"),
 )
 st.plotly_chart(fig_db, use_container_width=True)
-st.info("Insert Explanations Here")
+st.info(
+    "Australia's single-member system rewards concentrated support. "
+    "Labor's votes cluster in winnable seats; the Greens' support is spread too thinly to cross the threshold in most of them. "
+    "Independents are the exception, as each runs in one electorate, so their 7.3% of votes translates to a near-proportional 6.7% of seats."
+)
 
 st.divider()
 st.caption(
