@@ -63,7 +63,7 @@ PARTY_COLOURS = {
     "Labor": "#DE3533",
     "Coalition": "#1C4F9C",
     "Greens": "#10C25B",
-    "Independent": "#7B3FA0",
+    "Independent": "#00B4B4",
     "Other": "#999999",
 }
 # This order controls how parties stack in bar charts and appear in legends
@@ -254,9 +254,8 @@ with right:
     state_long["Total"] = state_long.groupby("StateAb")["Seats"].transform("sum")
     state_long["Pct"]   = (state_long["Seats"] / state_long["Total"] * 100).round(0)
 
-    # Only show the label if the segment is big enough to fit text (≥8%)
     state_long["Label"] = state_long.apply(
-        lambda r: f"{int(r['Pct'])}%" if r["Seats"] > 0 and r["Pct"] >= 8 else "", axis=1
+        lambda r: f"{int(r['Pct'])}%" if r["Seats"] > 0 else "", axis=1
     )
 
     fig_bar = px.bar(
